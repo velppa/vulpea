@@ -1000,6 +1000,18 @@ no longer exists."
 
 ;;; Cleanup
 
+(defun vulpea-db-sync--purge-orphan-notes (db)
+  "Remove notes rows whose path has no files row in DB.
+
+Notes and files rows are normally removed together, but a crash or
+a rename race can leave notes pointing at a path the files table no
+longer tracks.  Deleting by files-table paths never reaches such
+rows, so they persist indefinitely: they resolve ids to dead paths
+and shadow re-indexing of the moved file (its ids are taken).
+Cascades to normalized tables via foreign keys."
+  (emacsql db [:delete :from notes
+               :where path :not-in [:select path :from files]]))
+
 (defun vulpea-db-sync--cleanup-deleted-files ()
   "Remove database entries for files that no longer exist.
 
@@ -1012,7 +1024,8 @@ Returns count of removed files."
         (unless (file-exists-p path)
           (vulpea-db--delete-file-notes path)
           (emacsql db [:delete :from files :where (= path $s1)] path)
-          (setq deleted (1+ deleted)))))
+          (setq deleted (1+ deleted))))
+      (vulpea-db-sync--purge-orphan-notes db))
     (when (> deleted 0)
       (vulpea-db-sync--message "Vulpea: Removed %d deleted file%s from database"
                                deleted (if (= deleted 1) "" "s")))
@@ -1038,7 +1051,8 @@ Returns count of removed files."
         (unless (gethash path existing-set)
           (vulpea-db--delete-file-notes path)
           (emacsql db [:delete :from files :where (= path $s1)] path)
-          (setq deleted (1+ deleted)))))
+          (setq deleted (1+ deleted))))
+      (vulpea-db-sync--purge-orphan-notes db))
     (when (> deleted 0)
       (vulpea-db-sync--message "Vulpea: Removed %d deleted file%s from database"
                                deleted (if (= deleted 1) "" "s")))
