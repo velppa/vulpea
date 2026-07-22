@@ -593,6 +593,33 @@ them."
             (should-not (vulpea-db-get-by-id "orphan-id")))
         (delete-file live-file)))))
 
+(ert-deftest vulpea-db-sync-cleanup-deleted-files-using-keeps-file-created-after-snapshot ()
+  "A file indexed after EXISTING-FILES was captured survives cleanup.
+
+`vulpea-db-sync--cleanup-deleted-files-using' is fed a snapshot from
+an async directory scan.  A file created (and indexed via
+`vulpea-db-update-file') after that snapshot was taken but before the
+cleanup callback runs is absent from the snapshot even though it is
+live on disk; cleanup must not treat it as deleted."
+  (vulpea-test--with-temp-db
+    (vulpea-db)
+    (let ((other-file (vulpea-test--create-temp-org-file
+                       ":PROPERTIES:\n:ID: other-id\n:END:\n#+TITLE: Other\n"))
+          (new-file (vulpea-test--create-temp-org-file
+                    ":PROPERTIES:\n:ID: late-id\n:END:\n#+TITLE: Late\n")))
+      (unwind-protect
+          (progn
+            (vulpea-db-update-file other-file)
+            ;; Snapshot predates NEW-FILE's creation and indexing: it
+            ;; only knows about OTHER-FILE.
+            (vulpea-db-update-file new-file)
+
+            (vulpea-db-sync--cleanup-deleted-files-using (list other-file))
+
+            (should (vulpea-db-get-by-id "late-id")))
+        (delete-file other-file)
+        (delete-file new-file)))))
+
 (ert-deftest vulpea-db-sync-cleanup-untracked-files ()
   "Test that narrowing sync directories removes untracked files from database."
   (vulpea-test--with-temp-db

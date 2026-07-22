@@ -1036,7 +1036,10 @@ Returns count of removed files."
 
 EXISTING-FILES is a list of absolute paths known to exist on disk
 \(typically from an fd/find subprocess).  This avoids per-file
-`file-exists-p' calls by comparing against the known set.
+`file-exists-p' calls by comparing against the known set, except for
+a path missing from the set - `file-exists-p' is rechecked before
+deleting, since EXISTING-FILES is a snapshot that can predate a file
+created while the scan was in flight.
 
 Returns count of removed files."
   (let* ((db (vulpea-db))
@@ -1048,7 +1051,7 @@ Returns count of removed files."
       (puthash f t existing-set))
     (emacsql-with-transaction db
       (dolist (path all-paths)
-        (unless (gethash path existing-set)
+        (unless (or (gethash path existing-set) (file-exists-p path))
           (vulpea-db--delete-file-notes path)
           (emacsql db [:delete :from files :where (= path $s1)] path)
           (setq deleted (1+ deleted))))
